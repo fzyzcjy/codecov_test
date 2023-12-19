@@ -29,38 +29,24 @@ jobs:
           - macos-11
           - ubuntu-20.04
         package:
-          - frb_dart
-          - frb_utils
-          - tools--frb_internal
-          - frb_example--dart_minimal
-          - frb_example--pure_dart
-          - frb_example--deliberate_bad
-        exclude:
-          - {image: windows-2019, package: frb_utils}
-          - {image: macos-11, package: frb_utils}
-          - {image: windows-2019, package: tools--frb_internal}
-          - {image: macos-11, package: tools--frb_internal}
-          - {image: windows-2019, package: frb_example--deliberate_bad}
-          - {image: macos-11, package: frb_example--deliberate_bad}
+          - my_dart_package
 
     steps:
       # setup
-      - uses: catchpoint/workflow-telemetry-action@v1
-        with:
-          comment_on_pr: false
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ env.FRB_MAIN_RUST_VERSION }}
-          components: rustfmt
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: stable
           architecture: x64
-      - uses: taiki-e/install-action@cargo-llvm-cov
 
       # execute
-      - run: ./frb_internal test-dart-native --package ${{ matrix.package }} --coverage
+      - run: |-
+          set -euxo pipefail
+          cd ${{ matrix.package }}
+          dart pub global activate coverage
+          dart pub get
+          dart test --coverage=coverage
+          format_coverage --lcov --in=coverage --out=coverage/lcov.info --packages=.dart_tool/package_config.json
 
       # report
       - uses: actions/upload-artifact@v4
@@ -75,12 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     # NOTE need to depend on *all* jobs that may generate codecov artifacts
     needs:
-      - generate_run_frb_codegen_command_generate
-      - generate_run_frb_codegen_command_integrate
-      - generate_internal
-      - test_rust
       - test_dart_native
-      - test_flutter_web
 
     steps:
       - uses: actions/checkout@v4
