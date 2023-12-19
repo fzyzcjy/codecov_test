@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request: {}
+  workflow_dispatch: {}
+
+env:
+  CARGO_TERM_COLOR: always
+  FRB_MAIN_RUST_VERSION: 1.74.0
+  FRB_MAIN_DART_VERSION: 3.2.0
+  FRB_MAIN_FLUTTER_VERSION: 3.16.0
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test_dart_native:
+    name: 'Test :: Dart :: Native'
+    runs-on: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - windows-2019
+          - macos-11
+          - ubuntu-20.04
+        package:
+          - frb_dart
+          - frb_utils
+          - tools--frb_internal
+          - frb_example--dart_minimal
+          - frb_example--pure_dart
+          - frb_example--deliberate_bad
+        exclude:
+          - {image: windows-2019, package: frb_utils}
+          - {image: macos-11, package: frb_utils}
+          - {image: windows-2019, package: tools--frb_internal}
+          - {image: macos-11, package: tools--frb_internal}
+          - {image: windows-2019, package: frb_example--deliberate_bad}
+          - {image: macos-11, package: frb_example--deliberate_bad}
+
+    steps:
+      # setup
+      - uses: catchpoint/workflow-telemetry-action@v1
+        with:
+          comment_on_pr: false
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.FRB_MAIN_RUST_VERSION }}
+          components: rustfmt
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+          architecture: x64
+      - uses: taiki-e/install-action@cargo-llvm-cov
+
+      # execute
+      - run: ./frb_internal test-dart-native --package ${{ matrix.package }} --coverage
+
+      # report
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.job }}--${{ matrix.image }}--${{ matrix.package }}--coverage
+          path: ${{ matrix.package }}/coverage/
+
+  # Why one separate codecov job: Otherwise, when some jobs upload artifact while some not,
+  # the (partial) coverage will show up and be very low - which surely does not reflect actual coverage.
+  misc_codecov:
+    name: 'Misc :: Codecov'
+    runs-on: ubuntu-latest
+    # NOTE need to depend on *all* jobs that may generate codecov artifacts
+    needs:
+      - generate_run_frb_codegen_command_generate
+      - generate_run_frb_codegen_command_integrate
+      - generate_internal
+      - test_rust
+      - test_dart_native
+      - test_flutter_web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: downloaded-artifacts/
+
+      - run: tree downloaded-artifacts
+
+      - uses: codecov/codecov-action@v3
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        with:
+          directory: downloaded-artifacts
+          verbose: true
