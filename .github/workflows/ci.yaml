@@ -41,7 +41,6 @@ jobs:
 
       # execute
       - run: |-
-          set -euxo pipefail
           cd ${{ matrix.package }}
           dart pub global activate coverage
           dart pub get
